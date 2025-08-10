@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>بوت AI على المتصفح</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #fff;
+      color: #222;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    #chat {
+      width: 100%;
+      max-width: 600px;
+      height: 70vh;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 15px;
+      overflow-y: auto;
+      background: #f9f9f9;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      scroll-behavior: smooth;
+    }
+    .message.user {
+      background-color: #d0e7ff;
+      color: #0057b7;
+      align-self: flex-start;
+      text-align: right;
+      border-radius: 12px;
+      padding: 8px 12px;
+      max-width: 75%;
+      word-wrap: break-word;
+      animation: fadeIn 0.3s ease forwards;
+    }
+    .message.bot {
+      background-color: #d4ffd8;
+      color: #2b7a0b;
+      align-self: flex-end;
+      text-align: left;
+      border-radius: 12px;
+      padding: 8px 12px;
+      max-width: 75%;
+      word-wrap: break-word;
+      animation: fadeIn 0.3s ease forwards;
+    }
+    #chat-form {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      align-items: center;
+    }
+    #user-input {
+      flex: 1 1 300px;
+      padding: 12px 15px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      outline: none;
+      min-width: 150px;
+    }
+    #user-input:disabled {
+      background-color: #eee;
+      cursor: not-allowed;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      min-width: 100px;
+    }
+    #send-btn {
+      background-color: #0057b7;
+      color: white;
+    }
+    #send-btn:disabled {
+      background-color: #999;
+      cursor: not-allowed;
+    }
+    #send-btn:hover:not(:disabled) {
+      background-color: #004099;
+    }
+    #clear-btn {
+      background-color: #b70000;
+      color: white;
+    }
+    #clear-btn:hover {
+      background-color: #7a0000;
+    }
+    #feedback-btn {
+      background-color: #ffa500;
+      color: black;
+    }
+    #feedback-btn:hover {
+      background-color: #cc8400;
+    }
+
+    @keyframes fadeIn {
+      from {opacity: 0; transform: translateY(10px);}
+      to {opacity: 1; transform: translateY(0);}
+    }
+
+    /* مودال الاقتراحات */
+    #feedback-modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      padding: 10px;
+    }
+    #feedback-modal.active {
+      display: flex;
+    }
+    #feedback-content {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 0 15px rgba(0,0,0,0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #feedback-content textarea {
+      width: 100%;
+      height: 120px;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      resize: vertical;
+    }
+    #feedback-content button {
+      width: 100px;
+      align-self: flex-end;
+    }
+
+    /* تجاوب مع الشاشات الصغيرة */
+    @media (max-width: 480px) {
+      #chat {
+        height: 60vh;
+      }
+      #chat-form {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      #user-input {
+        flex: none;
+        width: 100%;
+        min-width: auto;
+      }
+      button {
+        width: 100%;
+        min-width: auto;
+      }
+      #clear-btn, #feedback-btn {
+        margin-top: 5px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="chat"></div>
+
+  <form id="chat-form">
+    <input id="user-input" type="text" placeholder="اكتب سؤالك هنا..." autocomplete="off" required />
+    <button type="submit" id="send-btn">أرسل</button>
+    <button type="button" id="clear-btn" title="مسح المحادثة">مسح</button>
+    <button type="button" id="feedback-btn" title="اقتراحات وشكاوي">اقتراحات</button>
+  </form>
+
+  <!-- مودال الاقتراحات -->
+  <div id="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+    <div id="feedback-content">
+      <h3 id="feedback-title">شاركنا اقتراحاتك أو شكاويك</h3>
+      <textarea id="feedback-text" placeholder="اكتب هنا..."></textarea>
+      <div>
+        <button id="feedback-send">إرسال</button>
+        <button id="feedback-cancel">إلغاء</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const chat = document.getElementById("chat");
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+    const clearBtn = document.getElementById("clear-btn");
+    const feedbackBtn = document.getElementById("feedback-btn");
+    const feedbackModal = document.getElementById("feedback-modal");
+    const feedbackText = document.getElementById("feedback-text");
+    const feedbackSend = document.getElementById("feedback-send");
+    const feedbackCancel = document.getElementById("feedback-cancel");
+
+    function normalizeArabic(text) {
+      text = text.trim().toLowerCase();
+      if (text.endsWith('ات')) {
+        text = text.slice(0, -2);
+      }
+      return text;
+    }
+
+    function addMessage(text, sender) {
+      const div = document.createElement("div");
+      div.classList.add("message", sender);
+      div.textContent = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function saveToCache(question, answer) {
+      try {
+        localStorage.setItem(question.toLowerCase(), answer);
+      } catch (e) {
+        console.warn("تعذر حفظ البيانات في التخزين المحلي.");
+      }
+    }
+
+    function getFromCache(question) {
+      return localStorage.getItem(question.toLowerCase());
+    }
+
+    async function fetchWikiSummary(topic) {
+      topic = normalizeArabic(topic);
+      const url = `https://ar.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topic)}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          if (res.status === 404) {
+            return "عذرًا، ما لقيت معلومات عن هذا الموضوع 😕 حاول تكتب بطريقة ثانية أو اسألني عن موضوع ثاني.";
+          } else {
+            throw new Error("خطأ في جلب المعلومات.");
+          }
+        }
+        const data = await res.json();
+        if (!data.extract || data.extract.trim() === "") {
+          return "عذرًا، لا يوجد ملخص متوفر لهذا الموضوع.";
+        }
+        let summary = data.extract;
+        if (summary.length > 400) {
+          summary = summary.slice(0, 400) + " ...";
+        }
+        return summary;
+      } catch (err) {
+        return "واجهت مشكلة في الاتصال بالإنترنت أو في السيرفر.";
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const userText = input.value.trim();
+      if (!userText) return;
+      addMessage(userText, "user");
+      input.value = "";
+      input.disabled = true;
+      sendBtn.disabled = true;
+
+      const cachedAnswer = getFromCache(userText);
+      if (cachedAnswer) {
+        addMessage(cachedAnswer, "bot");
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+        return;
+      }
+
+      addMessage("... جاري البحث 🤔", "bot");
+
+      const summary = await fetchWikiSummary(userText);
+
+      // إزالة رسالة جاري البحث
+      const lastBotMsg = chat.querySelector(".bot:last-child");
+      if (lastBotMsg) chat.removeChild(lastBotMsg);
+
+      addMessage(summary, "bot");
+
+      saveToCache(userText, summary);
+
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
+    });
+
+    clearBtn.addEventListener("click", () => {
+      localStorage.clear();
+      chat.innerHTML = "";
+      input.focus();
+    });
+
+    feedbackBtn.addEventListener("click", () => {
+      feedbackModal.classList.add("active");
+      feedbackText.value = "";
+      feedbackText.focus();
+    });
+
+    feedbackCancel.addEventListener("click", () => {
+      feedbackModal.classList.remove("active");
+    });
+
+    feedbackSend.addEventListener("click", () => {
+      const feedback = feedbackText.value.trim();
+      if (!feedback) {
+        alert("الرجاء كتابة الاقتراح أو الشكوى قبل الإرسال.");
+        feedbackText.focus();
+        return;
+      }
+      alert("شكرًا على مشاركتك! سيتم دراسة اقتراحك أو شكواك.");
+      feedbackModal.classList.remove("active");
+      feedbackText.value = "";
+    });
+
+    feedbackModal.addEventListener("click", (e) => {
+      if (e.target === feedbackModal) {
+        feedbackModal.classList.remove("active");
+      }
+    });
+  </script>
+</body>
+</html>
